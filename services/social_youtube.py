@@ -13,6 +13,32 @@ import json
 logger = logging.getLogger(__name__)
 
 # --- Helper Functions for Karaoke Captions ---
+def create_text_image_pil(text, fontsize=80, color=(255, 255, 255), font_path="arialbd.ttf"):
+    from PIL import Image, ImageDraw, ImageFont
+    import numpy as np
+    
+    try:
+        font = ImageFont.truetype(font_path, fontsize)
+    except:
+        font = ImageFont.load_default()
+
+    bbox = font.getbbox(text)
+    w, h = bbox[2], bbox[3] - bbox[1]
+    # Add padding
+    w += 40
+    h += 40
+    
+    img = Image.new('RGBA', (w, h), (0, 0, 0, 0))
+    
+    # Shadow
+    draw = ImageDraw.Draw(img)
+    draw.text((22, 22), text, font=font, fill='black')
+    
+    # Text
+    draw.text((20, 20), text, font=font, fill=color)
+    
+    return np.array(img)
+
 def _draw_karaoke_frame(chunk, active_word_obj, font, box_size, lines, line_height, start_y, space_w):
     from PIL import Image, ImageDraw
     import numpy as np
