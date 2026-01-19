@@ -13,6 +13,11 @@ def post_to_instagram(caption: str, image_path: str):
     Step 3: Publishes the Container.
     """
     try:
+        # Pre-check Credentials
+        if not settings.INSTAGRAM_ACCESS_TOKEN or settings.INSTAGRAM_ACCESS_TOKEN.startswith("your_"):
+            logger.info("Instagram Access Token missing or placeholder. Skipping Instagram post.")
+            return
+
         # 1. Upload to Cloud (ImgBB)
         if not settings.IMGBB_API_KEY:
             logger.warning("No IMGBB_API_KEY. Cannot post to Instagram (requires public URL).")
