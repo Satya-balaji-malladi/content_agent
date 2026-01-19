@@ -1,0 +1,41 @@
+# Environment & Secrets
+.env
+.env.local
+*.env
+token.json
+client_secret.json
+INSTAGRAM_TOKENS.md
+voice.json
+is_final_approved.txt
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+venv/
+env/
+.venv/
+
+# Logs
+logs/
+*.log
+autonomy_mission.log
+
+# Generated Assets (Keep repo clean)
+*.mp4
+*.mp3
+*.jpg
+*.png
+output_*.mp4
+final_master_*.mp4
+hook_preview.mp4
+frame_*.jpg
+scene_*.jpg
+voice.json
+temp_narrative.txt
+outputs/
+
+# OS
+.DS_Store
+Thumbs.db
+token.json.old
