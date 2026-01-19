@@ -18,8 +18,11 @@ def create_text_image_pil(text, fontsize=80, color=(255, 255, 255), font_path="a
     import numpy as np
     
     try:
+        if os.name == 'posix':
+            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         font = ImageFont.truetype(font_path, fontsize)
     except:
+        logging.warning(f"Font {font_path} not found. Falling back to default.")
         font = ImageFont.load_default()
 
     bbox = font.getbbox(text)
