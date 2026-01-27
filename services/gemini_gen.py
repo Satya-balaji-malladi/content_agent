@@ -1,5 +1,11 @@
 import google.generativeai as genai
 import logging
+import json
+import time
+import os
+import urllib.parse
+import urllib.request
+from google.api_core import exceptions
 from config import settings
 
 # Configure API
@@ -10,20 +16,13 @@ logger = logging.getLogger(__name__)
 
 def generate_cinematic_story():
     """
-    Generates a daily tech tip (text) and an image prompt, 
-    then generates the image (if supported by the specific model version available).
-    
-    Returns:
-        dict: {
-            "caption": str,
-            "image_path": str (local path to saved image),
-            "topic": str
-        }
+    Generates a cinematic story using Gemini with a failover to Groq if quota is exceeded.
+    Then generates sequential images via Pollinations.ai.
     """
+    # FIX 1: Initialize data at the very top to avoid 'local variable' errors
+    data = None 
+    
     try:
-        # 1. Generate Text Content (Tip + Image Prompt)
-        # Using a model alias that represents the user's request. 
-        # Fallback to 'gemini-1.5-flash' if 'gemini-3.0-flash' is not yet available publicly.
         model_name = "gemini-2.0-flash" 
         model = genai.GenerativeModel(model_name)
         
@@ -34,6 +33,111 @@ def generate_cinematic_story():
         - Optimal Duration: 35 seconds (Range 30-40s).
         - Word Count: 90-110 words.
         - Hook: Strict 5-8 seconds. 
+        - Climax: Must occur at the 25-second mark.
+        - Loop Logic: The final sentence must flow seamlessly back into the hook for infinite viewing.
+        
+        Output Format (JSON):
+        {
+            "topic": "The Cinematic Title",
+            "narrative": "The full story (90-110 words).",
+            "hook_prompts": ["3 cinematic noir prompts for the first 8 seconds."],
+            "story_prompts": ["12 sequential cinematic noir prompts for the rest."],
+            "youtube_title": "The Secret of the Night... 😱 | Balaji Bytes",
+            "youtube_description": "A mysterious figure emerges in the darkness... but what is he looking for? A cinematic AI story.",
+            "youtube_tags": ["AI Storytelling", "Cinematic AI", "Mystery", "Balaji Bytes", "Shorts"]
+        }
+        """
+
+        # Implement Backoff and Failover Logic
+        for attempt in range(3):
+            try:
+                response_text = None
+                
+                # Step A: Attempt Gemini
+                try:
+                    gemini_resp = model.generate_content(prompt, generation_config={"response_mime_type": "application/json"})
+                    response_text = gemini_resp.text
+                except (exceptions.ResourceExhausted, Exception) as gemini_e:
+                    logger.warning(f"Gemini Issue: {gemini_e}. Attempting Failover to Groq...")
+                    
+                    # Step B: Failover to Groq
+                    try:
+                        from groq import Groq
+                        if settings.GROQ_API_KEY:
+                            client = Groq(api_key=settings.GROQ_API_KEY)
+                            chat_completion = client.chat.completions.create(
+                                messages=[
+                                    {"role": "system", "content": "You are a JSON-only API. Return valid JSON matching the schema."},
+                                    {"role": "user", "content": prompt}
+                                ],
+                                model="llama-3.3-70b-versatile",
+                                response_format={"type": "json_object"}
+                            )
+                            response_text = chat_completion.choices[0].message.content
+                            logger.info("FAILOVER SUCCESS: Content generated via Groq.")
+                        else:
+                            logger.error("No GROQ_API_KEY found in settings.")
+                    except Exception as groq_e:
+                        logger.error(f"Groq Failover Failed: {groq_e}")
+
+                # Step C: Parse Result
+                if response_text:
+                    data = json.loads(response_text)
+                    break # Success! Exit the retry loop
+                    
+            except Exception as e:
+                 wait_time = 20 * (attempt + 1)
+                 logger.warning(f"All Providers Exhausted. Sleeping for {wait_time}s... Error: {e}")
+                 time.sleep(wait_time)
+        
+        # FIX 2: Check if data was actually populated before proceeding
+        if not data:
+             raise Exception("Content Generation Failed: Both Gemini and Groq were unavailable.")
+        
+        logger.info(f"Generated Cinematic Story: {data['topic']}")
+        
+        # Step 2: Generate Images (Pollinations.ai)
+        all_prompts = data.get('hook_prompts', []) + data.get('story_prompts', [])
+        image_paths = []
+
+        logger.info(f"Starting Pollinations.ai Generation for {len(all_prompts)} frames...")
+        
+        for i, p_text in enumerate(all_prompts):
+            path = f"frame_{i+1}.jpg"
+            clean_prompt = p_text.replace('"', '').replace("'", "")
+            encoded_prompt = urllib.parse.quote(clean_prompt[:400])
+            
+            # Vertical 9:16 Resolution
+            url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&model=flux&nologo=true&seed={i*123}"
+            
+            for img_attempt in range(3):
+                try:
+                    req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
+                    with urllib.request.urlopen(req, timeout=60) as response:
+                        with open(path, 'wb') as f:
+                            f.write(response.read())
+                    
+                    if os.path.exists(path) and os.path.getsize(path) > 1000:
+                        image_paths.append(path)
+                        time.sleep(2) 
+                        break
+                except Exception as e:
+                    logger.warning(f"Frame {i+1} attempt {img_attempt+1} failed: {e}")
+                    time.sleep(5)
+
+        return {
+            "narrative": data['narrative'],
+            "topic": data['topic'],
+            "image_paths": image_paths,
+            "youtube_title": data['youtube_title'],
+            "youtube_description": data['youtube_description'],
+            "youtube_tags": data['youtube_tags'],
+            "hook_count": len(data.get('hook_prompts', []))
+        }
+
+    except Exception as e:
+        logger.error(f"Final Execution Error: {e}")
+        raise e
         - Climax: Must occur at the 25-second mark.
         - Loop Logic: The final sentence must flow seamlessly back into the hook for infinite viewing.
         
