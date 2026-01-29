@@ -1,4 +1,4 @@
-Name: Daily Content Agent
+name: Daily Content Agent
 
 on:
   schedule:
@@ -30,12 +30,10 @@ jobs:
     - name: Install Python Dependencies
       run: |
         pip install -r requirements.txt
-        # Just in case it's missing from requirements.txt
         pip install edge-tts Pillow 
 
     - name: Run Content Job
       env:
-        # Check these names match exactly with your secrets in GitHub Settings
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
         GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
