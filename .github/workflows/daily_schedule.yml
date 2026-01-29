@@ -1,4 +1,4 @@
-name: Daily Content Agent
+Name: Daily Content Agent
 
 on:
   schedule:
@@ -18,23 +18,29 @@ jobs:
     - name: Set up Python
       uses: actions/setup-python@v4
       with:
-        python-version: '3.11'
-     ##   cache: 'pip'
+        python-version: '3.10'
 
-    - name: Install System Dependencies (FFmpeg)
+    - name: Install System Dependencies
       run: |
         sudo apt-get update
-        sudo apt-get install -y ffmpeg libsm6 libxext6
+        sudo apt-get install -y ffmpeg imagemagick fonts-dejavu libsm6 libxext6
+        # Fix ImageMagick policy to allow MoviePy to write text files
+        sudo sed -i 's/domain="path" rights="none" pattern="@\*"/domain="path" rights="read|write" pattern="@\*"/g' /etc/ImageMagick-6/policy.xml
 
     - name: Install Python Dependencies
       run: |
         pip install -r requirements.txt
+        # Just in case it's missing from requirements.txt
+        pip install edge-tts Pillow 
 
     - name: Run Content Job
       env:
+        # Check these names match exactly with your secrets in GitHub Settings
         GOOGLE_API_KEY: ${{ secrets.GOOGLE_API_KEY }}
+        GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
         GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
         YOUTUBE_TOKEN_JSON: ${{ secrets.YOUTUBE_TOKEN_JSON }}
+        YOUTUBE_TOKEN_ENV: ${{ secrets.YOUTUBE_TOKEN_ENV }}
         INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
       run: |
