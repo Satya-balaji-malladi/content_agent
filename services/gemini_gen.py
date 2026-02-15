@@ -1,5 +1,9 @@
 import google.generativeai as genai
 import logging
+import urllib.parse
+import random
+import time
+import requests
 from config import settings
 
 # Configure API
@@ -7,6 +11,69 @@ genai.configure(api_key=settings.GOOGLE_API_KEY)
 
 # Logger
 logger = logging.getLogger(__name__)
+
+def generate_image_with_fallback(prompt, output_path):
+    """
+    Generates an image using Pollinations AI (Flux) with robust fallback mechanisms.
+    If Pollinations fails (Error 530/500/Connection), it falls back to a placeholder image 
+    so the pipeline does not crash.
+    """
+    import requests
+    import urllib.parse
+    import time
+    
+    # Attempt 1: Pollinations AI (Flux)
+    try:
+        encoded_prompt = urllib.parse.quote(prompt)
+        url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=1080&height=1920&model=flux&nologo=true"
+        
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
+        }
+        
+        # Short retry loop for primary provider
+        for attempt in range(2):
+            try:
+                response = requests.get(url, headers=headers, timeout=20)
+                if response.status_code == 200 and len(response.content) > 1000:
+                    with open(output_path, 'wb') as f:
+                        f.write(response.content)
+                    logger.info(f"SUCCESS: Image generated via Pollinations (Flux).")
+                    return True
+                else:
+                    logger.warning(f"Pollinations attempt {attempt+1} failed: {response.status_code}")
+                    if response.status_code in [530, 403, 500, 502]:
+                        break # Fail fast on server errors
+            except Exception as e:
+                logger.warning(f"Pollinations connection error: {e}")
+            time.sleep(1)
+            
+        logger.warning("⚠️ Pollinations Service Down or Unreachable. Using Fallback Provider.")
+
+    except Exception as e:
+        logger.error(f"Critical error in Pollinations request: {e}")
+
+    # Attempt 2: Picsum (Fallback Placeholder)
+    # Using 'picsum.photos' for reliable random abstract/nature vertical images
+    try:
+        params = urllib.parse.quote(prompt[:20]) # Seed with prompt prefix for consistency
+        fallback_url = f"https://picsum.photos/seed/{params}/1080/1920" # Vertical High Res
+        
+        logger.info(f"Attempting Fallback: {fallback_url}")
+        response = requests.get(fallback_url, timeout=15)
+        
+        if response.status_code == 200:
+            with open(output_path, 'wb') as f:
+                f.write(response.content)
+            logger.warning(f"⚠️ Generated PLACEHOLDER image via Picsum (Service Outage Fallback).")
+            return True
+        else:
+            logger.error(f"Fallback Provider also failed: {response.status_code}")
+            return False
+
+    except Exception as e:
+        logger.error(f"Fallback generation failed: {e}")
+        return False
 
 def generate_cinematic_story():
     """
@@ -122,61 +189,26 @@ def generate_cinematic_story():
         
         logger.info(f"Generated Cinematic Story: {data['topic']}")
         
-        # 2. Generate Images (Pollinations.ai) - Fast & Story Montage
-        all_prompts = data['hook_prompts'] + data['story_prompts']
-        image_paths = []
-        
         # 2. Generate Images (Pollinations.ai)
         all_prompts = data['hook_prompts'] + data['story_prompts']
         image_paths = []
         
-        try:
-            import urllib.parse
-            import urllib.request
-            import time
-            import os
-
-            logger.info(f"Starting Pollinations.ai Generation for {len(all_prompts)} frames...")
+        # Ensure temp dir exists using relative path assumes calling context handled it
+        # But good to be safe here if run independently
+        import os
+        if not os.path.exists("temp"): os.makedirs("temp")
+        
+        logger.info(f"Starting Pollinations.ai Generation for {len(all_prompts)} frames...")
+        
+        for i, prompt in enumerate(all_prompts):
+            # Save to temp directory
+            filename = f"frame_{i+1}.jpg"
+            path = os.path.join("temp", filename)
             
-            for i, prompt in enumerate(all_prompts):
-                path = f"frame_{i+1}.jpg"
-                
-                # Cleanup Prompt
-                clean_prompt = prompt.replace('"', '').replace("'", "")
-                encoded_prompt = urllib.parse.quote(clean_prompt[:400]) # Limit length
-                
-                # Pollinations URL (Flux Model, No Logo, 720p for Speed/Stability)
-                # CHANGED TO VERTICAL RESOLUTION: 720x1280
-                url = f"https://image.pollinations.ai/prompt/{encoded_prompt}?width=720&height=1280&model=flux&nologo=true&seed={i*123}"
-                
-                for attempt in range(5): # Increased to 5 retries
-                    try:
-                        # Random seed update on retry to avoid stuck cache
-                        if attempt > 0: url = f"{url}&seed={i*123 + attempt}"
-                        
-                        req = urllib.request.Request(url, headers={'User-Agent': 'Mozilla/5.0'})
-                        # Increased timeout to 120s for busy periods
-                        with urllib.request.urlopen(req, timeout=120) as response:
-                            with open(path, 'wb') as f:
-                                f.write(response.read())
-                        
-                        # Verify file
-                        if os.path.exists(path) and os.path.getsize(path) > 1000:
-                            logger.info(f"Generated Frame {i+1} (Pollinations/Flux)")
-                            image_paths.append(path)
-                            # Polite delay to avoid rate limits
-                            time.sleep(5) 
-                            break
-                        else:
-                            raise Exception("Empty file downloaded")
-                            
-                    except Exception as e:
-                        logger.warning(f"Frame {i+1} attempt {attempt+1} failed: {e}")
-                        time.sleep(10) # 10s cooling off on failure
-                        if attempt == 4: logger.error(f"Failed to generate Frame {i+1} after 5 attempts")
-
-        except Exception as e:
-             logger.error(f"Pollinations Generation Failed: {e}")
+            if generate_image_with_fallback(prompt, path):
+                image_paths.append(path)
+            else:
+                logger.error(f"Failed to generate Frame {i+1} even with fallback.")
 
         
         # (Orphaned except blocks removed)

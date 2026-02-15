@@ -13,13 +13,27 @@ import json
 logger = logging.getLogger(__name__)
 
 # --- Helper Functions for Karaoke Captions ---
-def create_text_image_pil(text, fontsize=80, color=(255, 255, 255), font_path="arialbd.ttf"):
+def get_bundled_font_path():
+    """Returns absolute path to bundled font, or raises error if missing."""
+    import os
+    # Assuming file is in services/social_youtube.py, so go up one level to root, then assets/fonts
+    base_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    font_path = os.path.join(base_dir, "assets", "fonts", "Roboto-Bold.ttf")
+    
+    if not os.path.exists(font_path):
+        logger.error(f"❌ Font file missing at {font_path}! Please download Roboto-Bold.ttf to assets/fonts/")
+        # Fallback to system font if critical, but explicit error requested
+        return "arialbd.ttf" # Fallback for now to prevent crash
+    return font_path
+
+def create_text_image_pil(text, fontsize=80, color=(255, 255, 255), font_path=None):
     from PIL import Image, ImageDraw, ImageFont
     import numpy as np
     
+    if font_path is None:
+        font_path = get_bundled_font_path()
+
     try:
-        if os.name == 'posix':
-            font_path = "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
         font = ImageFont.truetype(font_path, fontsize)
     except:
         logging.warning(f"Font {font_path} not found. Falling back to default.")
@@ -78,15 +92,19 @@ def _draw_karaoke_frame(chunk, active_word_obj, font, box_size, lines, line_heig
         
     return np.array(img)
 
-def generate_karaoke_clips(words, font_path_preferred, fontsize=75, box_size=(900, 600), position=('center', 0.55)):
+def generate_karaoke_clips(words, font_path_preferred=None, fontsize=75, box_size=(900, 600), position=('center', 0.55)):
     from PIL import Image, ImageDraw, ImageFont
     import numpy as np
     
+    if font_path_preferred is None:
+        font_path_preferred = get_bundled_font_path()
+
     # 1. Load Font
     try:
         font = ImageFont.truetype(font_path_preferred, fontsize)
     except:
         try:
+            # Fallback to system arial
             font = ImageFont.truetype("arial.ttf", fontsize)
         except:
             font = ImageFont.load_default()
@@ -388,19 +406,69 @@ def create_premium_reel(image_paths: list, hook_count: int, text_overlay: str, f
 
 def upload_to_youtube(video_path: str, title: str, description: str, tags: list, privacy: str = "public"):
     try:
+        import time
+        import random
+        from googleapiclient.errors import HttpError
+
         if not os.path.exists('token.json'):
             logger.error("YouTube 'token.json' not found. Cannot upload.")
             return
+
         creds = Credentials.from_authorized_user_file('token.json', ['https://www.googleapis.com/auth/youtube.upload'])
         youtube = build('youtube', 'v3', credentials=creds)
+        
         body = {
             'snippet': {'title': title[:100], 'description': description, 'tags': tags, 'categoryId': '28'},
             'status': {'privacyStatus': privacy, 'selfDeclaredMadeForKids': False}
         }
-        media = MediaFileUpload(video_path, chunksize=-1, resumable=True)
+        
+        # Resumable upload with 4MB chunks
+        chunk_size = 4 * 1024 * 1024 
+        media = MediaFileUpload(video_path, chunksize=chunk_size, resumable=True)
+        
         request = youtube.videos().insert(part='snippet,status', body=body, media_body=media)
-        response = request.execute()
+        
+        response = None
+        retry_count = 0
+        max_retries = 5
+        
+        logger.info(f"Starting Resumable YouTube Upload for {os.path.basename(video_path)}...")
+        
+        while response is None:
+            try:
+                status, response = request.next_chunk()
+                if status:
+                    progress = int(status.progress() * 100)
+                    logger.info(f"Uploaded {progress}%...")
+            
+            except HttpError as e:
+                if e.resp.status in [500, 502, 503, 504]:
+                    if retry_count < max_retries:
+                        sleep_time = (1 * (2 ** retry_count)) + (random.randint(0, 1000) / 1000)
+                        logger.warning(f"Upload failed with {e.resp.status}. Retrying in {sleep_time:.2f}s... (Attempt {retry_count + 1}/{max_retries})")
+                        time.sleep(sleep_time)
+                        retry_count += 1
+                        continue
+                    else:
+                        logger.error("Max retries reached for YouTube upload.")
+                        raise e
+                else:
+                    raise e
+            
+            except Exception as e:
+                # Handle socket errors / connection resets
+                if retry_count < max_retries:
+                    sleep_time = (1 * (2 ** retry_count))
+                    logger.warning(f"Network error during upload: {e}. Retrying in {sleep_time}s...")
+                    time.sleep(sleep_time)
+                    retry_count += 1
+                    continue
+                else:
+                    logger.error(f"Upload failed after retries: {e}")
+                    raise e
+
         logger.info(f"Uploaded to YouTube: {response.get('id')}")
         return response
+
     except Exception as e:
         logger.error(f"YouTube Upload Failed: {e}")
