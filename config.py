@@ -21,7 +21,7 @@ class Settings(BaseSettings):
     INSTAGRAM_ACCOUNT_ID: str = "place_holder"
     
     # ImgBB API Key (Loaded from environment)
-    IMGBB_API_KEY: str = os.getenv('IMGBB_API_KEY')
+    IMGBB_API_KEY: str = os.getenv('IMGBB_API_KEY', "dummy_key_for_ci")
 
     class Config:
         env_file = ".env"
