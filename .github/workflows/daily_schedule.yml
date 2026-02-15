@@ -41,5 +41,6 @@ jobs:
         YOUTUBE_TOKEN_ENV: ${{ secrets.YOUTUBE_TOKEN_ENV }}
         INSTAGRAM_ACCESS_TOKEN: ${{ secrets.INSTAGRAM_ACCESS_TOKEN }}
         INSTAGRAM_ACCOUNT_ID: ${{ secrets.INSTAGRAM_ACCOUNT_ID }}
+        IMGBB_API_KEY: ${{ secrets.IMGBB_API_KEY }} # Fix: Added missing key
       run: |
         python run_job.py
