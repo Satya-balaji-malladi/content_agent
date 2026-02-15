@@ -20,8 +20,9 @@ class Settings(BaseSettings):
     INSTAGRAM_ACCESS_TOKEN: str = "place_holder"
     INSTAGRAM_ACCOUNT_ID: str = "place_holder"
     
-    # ImgBB API Key (Loaded from environment)
-    IMGBB_API_KEY: str = os.getenv('IMGBB_API_KEY', "dummy_key_for_ci")
+    from pydantic import Field
+    # ImgBB API Key (Loaded from environment, with fallback for CI)
+    IMGBB_API_KEY: str = Field(default="dummy_key_for_ci", alias="IMGBB_API_KEY")
 
     class Config:
         env_file = ".env"
