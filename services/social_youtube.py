@@ -375,16 +375,36 @@ def create_premium_reel(image_paths: list, hook_count: int, text_overlay: str, f
             "-preset", "veryfast" # Sacrifice tiny bit of compression for speed/RAM
         ]
         
+        # CI/CD Optimization (GitHub Actions)
+        is_ci = os.getenv('CI', 'false').lower() == 'true'
+        
+        preset = 'veryfast' # Default for local
+        audio_bitrate = '192k'
+        threads = 2 # Default for local
+        fps = 30 # Default for local
+        crf_value = '23'
+        
+        if is_ci:
+            logger.info("⚡ CI Environment Detected: Using Optimized Rendering Settings (Ultrafast)")
+            preset = 'ultrafast' # Prioritize speed over compression efficiency
+            audio_bitrate = '128k' # Slightly lower audio quality
+            threads = 4 # Use all available cores explicitly (2-4 usually)
+            fps = 24 # Lower FPS for faster rendering
+            crf_value = '28' # Higher CRF = Lower Quality = Faster/Smaller
+            # Could also downscale here if needed, but 1080p ultrafast is usually okay
+            # If still crashing, we can resize clips to 720p
+        
         final_video_master.write_videofile(
             output_path,
-            fps=30,
+            fps=fps, 
             codec="libx264",
-            preset="veryfast",
-            threads=2,
-            bitrate="8000k",
+            preset=preset,
+            threads=threads,
+            bitrate="8000k", # Keep original bitrate for video, audio_bitrate handles audio
             audio=True, # Audio Enabled
             audio_codec="aac",
-            ffmpeg_params=ffmpeg_params
+            audio_bitrate=audio_bitrate,
+            ffmpeg_params=['-crf', crf_value]
         )
         
         # Cleanup
