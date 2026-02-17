@@ -3,6 +3,11 @@ import logging
 import os
 import sys
 import json
+from PIL import Image
+
+# Monkeypatch ANTIALIAS for Pillow 10+ compatibility with MoviePy
+if not hasattr(Image, 'ANTIALIAS'):
+    Image.ANTIALIAS = Image.LANCZOS
 
 # Setup Logging
 logging.basicConfig(level=logging.INFO)
